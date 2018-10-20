@@ -1,0 +1,152 @@
+upon running s450, I can define variables and output basic data types such as
+strings, numbers, and true and false. s450 supports many of the widely used
+special forms such as if and cond. But when I type in if or cond by themselves,
+the interpreter returns an error instead of a syntax for that special form like
+the normal scheme interpreter. Although i can type in numbers, basic arithmetic
+operators such as + and - are not supported. There are some primitive procesures
+such as cons car and cdr are supported, but combinations of car and cdr such as
+cadr are not supported. When typing in a primitive procedure, the interpreter
+will return saying that the procedure is a promitive procedure.
+
+to rewrite xeval so that is done in a data directed style, first I created a
+special-form-table similar to the primitive-procedure table. The table is a list
+where each element is a pair. The car of the pair is the name of a special form,
+the cdr of the pair is the action corresponding to that special form. For
+rewriting xeval, we first check a given expression for its type, using the
+type-of function. type-of simply checks the car of a given expression, and the
+car of an expression will identify the type of expression it is. those
+expressions which can be identified by the car are quote, set!, define, if,
+lambda, begin, cond. Those special form will be added to the special-form-table
+as names of special forms, and their actions, which are procedures that will be
+invoked when we incounter such expressions will also be added corresponding to
+the names to the special-form-table. So now when we look for a special form, if
+a special form is found we can return its action for xeval, and xeval will pass
+in the exp and env for evaluation. In the case where a special form is not
+found, other cond clauses are checked for other special forms. Those other
+special forms are self-evaluating, variables and applications. Those were not
+added onto the special-form-table because the type of expression are not
+identified the same way as the previous. The previous special forms have
+specific names corresponding which can be identified by getting the car of an
+expression. But self-evaluating, variables, and applications does not have
+specific names allocated to them for identification, thus, it is handled with a
+cond to check for each. At the end, if nothing else match for an expression,
+xeval returns an error. There is also a procedure to add special forms called
+install-special-form which takes two arguments, first being the name of the
+special form in quote, and second being the action of the special for which is a
+lambda function that takes in the exp and env as argument. Install-special-form
+first checks for the argument name and see if it is already in the
+special-form-table, if it is then we cannot use that name. If the name is not
+used, a new pair is created with the car being the name and the cdr being the
+action, and the pair is added to the special-form-table. For testing, using the
+provided file for load procedure, I was able to install load by calling
+(install-special-form 'load eval-load) which allows me to use load in
+s450. after invoking s450, i loaded a test.scm file that has a single line
+(define a 1). Then i typed in "a" into the s450 prompt and 1 was returned.
+
+to clean up the way primitive procedures are installed, and to get rid of
+primitive-procedures, primitive-procedure-names, primitive-procedure-objects, i
+notice that those 3 procedures are used only insetup-environment.
+setup-environment is only used when setting up the initial global environment,
+creating the first frame by calling xtend-environment passing it a list of
+variables and values. Originally, the list of variable are the quoted names of
+primitive procedures, and the list of values are the actual primitve procedures
+tagged with the symbol 'primitive. Instead of directly inputting primitive
+procedures when initializing the global environemnt, I made changes so that
+setup-environment extends a new frame with nothing in the frame initially. Now,
+the global environemnt has a single empty frame. Then I have a function
+install-primitive-procedure, which takes 2 arguments, name and action. It is
+called to install primitive procedures to the environment. It does so by using
+add-binding-to-frame, which adds a variable and a corresponding value to a given
+frame. install-primitive-procedure uses that to add the name, its corresponding
+action, to the first frame of the global environment, which was initially
+empty. Each time install-primitive-procedure is invoked, it adds new primitive
+procedures to the first frame of the global-environment. after installing +, -,
+etc, s450 now handles basic arithmetic operations.
+
+to output a message when entering the name of a special form in s450 prompt
+instead of returning an error, we have to modify the look-up-value
+procedure. Since lookup--variable-value is invoked when a variable name is
+entered into the s450 prompt, and it search the environment for the value of
+that variable. Originally, if i type in the name of a special form,
+lookup-variable-value will try to find that variable in the environment until it
+reach the empty environment and returns an error. But I added a case that if the
+empty environment is reached, and the variable is still not found, check the
+special-form-table to see if the variable is in the special-form-table. If it is
+then the variable name is a special form, and it will print a message. Otherwise,
+return an error.
+
+to prevent redefining of a special form, we need to make changes in the function
+that is the action for a definition expression, eval-definition. eval-definition
+takes the variable name, looks it up in the environment and add bindings to
+it. Before it look in the enviroment, first check to see if the variable name is
+in the special-form-table. If it is then we return an error that the variable is
+a special form. Same idea for an assignment statement. Assignment statement is
+handled by eval-assignment, but before looking into the environment for the
+variable name, we check to see if the variable is a special form by looking in
+the special-form-table.
+
+to implement defined?, i reused the code from lookup-variable-value and made
+some minor adjustments. Instead of taking var and env as argument, defined?
+takes the exp and env as argument. That way when defined? is called in s450,
+xeval will find that defined? is a special form and pass in exp and env into
+defined?. the definition defined? will take the cadr of exp, since defined? will
+be called (defined?  <symbol>), cadr of exp will be that <symbol>. Then just
+like lookup-variable-value, it walks through the environment one frame at a time
+and see if there is a match variable that is the input <symbol>. If there is a
+match then return true, otherwise, return false.
+
+to implement locally-defined?, we only need to check the first frame of the
+env. First we get the first frame of the env, and using the member function,
+check if the symbol is a member of the frame-variables. If it is then return
+true, if not then false.
+
+to implement make-unbound!, it is similar to lookup-variable-value and
+set-variable-value. There will be 2 loops, an outer loop which loops through
+each frames of the environment, and an inner loop, where for each frame, loop
+through the frame-variables and frame-values. If there is a variable in the
+current frame that matches the symbol, then we remove that variable from the
+frame along with its corresponding value. Once we finish processing the current
+frame, go back to the outer loop to process the remaining frames.
+
+to implement locally-make-unbound!, it is a simplified version of
+make-unbound!. We only get the first frame of the env, and check if the symbol
+that we are looking for is a variable in the first frame. If it is then remove
+that variable along with its corresponding value and we are done.
+
+To test those newly defined special forms, i first defined a variable a as 1.
+
+s450=>(define a 1)
+
+now there is a variable "a" in the environment
+
+then i defined a function f
+
+s450=> (define f
+         (lambda (a b)
+           (display (locally-defined? a))
+           (display (locally-defined? b))
+           (locally-make-unbound! a)
+           (locally-make-unbound! b)
+           (display (locally-defined? a))
+           (display (locally-defined? b))
+           (display (defined? a))
+           (display (make-unbound! a))
+           (display (defined? a))
+           )
+        )
+
+Then i call (f 3 4)
+
+this will create a new frame in the env with the variables a, b and values 3
+4. Now there is a variable a in the first frame, and another variable a that was
+defined earlier before f was called.
+
+(f 3 4) returns #t #t #f #f #t #f
+
+a and b is defined in our first frame(current frame) so we get #t and #t. Then
+we unbounded them locally, and when we check again we get #f #f, since they are
+no longer in our current first frame. But then we called (defined? a) and we get
+#t because our other a that was defined earlier is still in the
+environment. After calling make-unbound!, we unbounded all the a's from the env,
+and when we check again we get #f showing that there is no variable called a in
+the environment

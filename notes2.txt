@@ -1,0 +1,111 @@
+to implement delayed arguments, in xeval, when we encounter an application, it
+can be either a user defined procedure or a primitive procedure. The original
+handling of an application is evaluating the procedure name along with its
+arguments in list-of-values before passing it to xapply. But with delayed, we
+need to check the formal arguments of a procedure before evaluating the actual
+arguments to a procedure. Therefore, in handling of application, first i
+evaluate the name of the procedure, that way i can extract its arguments. When
+evaluating a procedure name, if it is a primitive then we evaluate all its
+arguments normally and passing it to xapply. If a procedure is not a primitive,
+then first extract the formal arguments, then I have an overloaded
+list-of-values function where I pass in the formal parameters, actual
+parameters, and the env. As we evaluate each actual argument, first check if the
+corresponding formal argument is a delayed argument. If it is delayed then
+instead of evaluating the argument, we create a thunk object where the object is
+a list consisting of the symbol 'thunk, the unevaluated actual argument, and the
+env it is evaluated in('thunk arg env). Now once we get to xapply, when we
+evaluate the body of the procedure with eval-sequence, if we need the delayed
+argument, it will be looked up in the environment by lookup-variable-value. Once
+we find the value for that delayed vairbale, the value will be a thunk object so
+we will need to call xeval on the unevaluated argument with the env that was
+part of the thunk object to evaluate that argument. The result will be passed
+back by lookup-variable-value and used by the procedure body.
+
+when implementing streams for s450, first I defined cons-stream as a
+special-form of s450. Cons-stream takes in exp and env as argument. The exp will
+be in the form of (cons-stream a b) and it creates a pair where the car of the
+pair is the evaluation of "a", "a" had to be evaluated because if a variable was
+passed in then we must evaluate that variable.  cdr of the pair is an unevaluatd
+"b" wrapped into a thunk object. Now when I call stream-car of a stream, we are
+getting the car of that stream. And when we get the cdr of a stream, since cdr
+of a stream is a thunk, we will call xeval on that thunk object to evaluate the
+content which is "b". the-empty-stream is just the an empty list
+'(). stream-null? just checks if a stream is null, meaning checking if a stream
+is equal to the-empty-stream. To test stream within s450, i defined a stream of
+integers from 1 to n, and a display-n function that takes a stream and an
+integer n as argument and display the first n element of a stream.
+
+=>s450 (display-n integers 5)
+1
+2
+3
+4
+5
+
+for implementation of reference, is is mostly adding on to what I have created
+for delayed, since both implementation are very similar. In my
+list-of-value-overload function, when checking formal arguments, I added a case
+for a reference argument. If a formal argument is reference, then I create a
+referral object similar to a thunk for delayed. The referral object is a list
+consisting of the symbol 'referral, the actual argument corresponding to the
+reference argument, which is a defined variable, and the current env. Now when
+evaluating the body in xapply, if we need the referenced variable it will be
+looked up in our new frame and finds a referral object. That object will be
+evaluated by a recursive call to xeval passing it the content which is an exp
+and env. The exp in this case is a defined variable in the environment so we
+return the value of that defined variable. The difference between reference and
+delayed is when we try to change the value of our formal argument, meaning we
+call set! on the formal argument within the body. In the case of a delayed
+variable we simply finds that variable in our current frame and set that
+variable to whatever we assign it. But in the case of a referenced variable,
+since that variable is actually a reference to another variable defined in the
+environemnt, when we set! our local variable we are actually setting the
+variable it is referenced to. To handle that we have to make change to
+set-variable-value!. When looking up a variable in the environemnt to set in
+set-variable-value!, if the variable value is a referral object, then we call
+set-variable-value! recursively on the variable thats inside the referral
+object. That way, the referenced variable is being changed and not the formal
+variable. As for defined-variable!, we do not have to make any changes to it
+because when we get the referenced variable, define-variable! uses that variable
+name and checks the first frame only, if found we change the value of that
+variable and if not found we create a new variable with the name of the
+referenced variable in the first frame.
+
+to implement dynamic variables, first I initialized a global variable called
+the-dynamic-environment to represent the dynamic environment. Then I added a
+case in list-of-value-overload to handle dynamic formal arguments. The way to
+handle dynamic variable is when evaluating a procedure that involves a dynamic
+formal argument, we evaluate the corresponding actual argument normally but in
+the dynamic environment instead of the normal environment. Now in xapply when
+evaluating the body of a procedure, when we create a new frame to evaluate the
+body, we have to extend that frame onto the normal
+environment(the-global-environment) and also the-dynamic-environment.To do that
+we have to modify xtend-environment. In xtend-environment, a new frame is
+created and is attached onto the current environment. Along with the current
+environment, we must attached that same frame onto the dynamic-environment.
+Once we are done with evaluating the body of the procedure, we return
+the-dynamic-environment to its previous state, meaning we pop the first frame
+off of the dynamic environment by setting the dynamic environemnt to its cdr. In
+xapply, we have to make sure that we return the evaluation of the body of the
+procedure as its return value. To do that I first evaluate the body and save it
+in a variable called return, then I pop off the first frame of the dynamic
+environment, and call return at the end.
+
+to implement error handling within s450, I used call/cc in s450 function right
+before prompting user for input. Setting a global variable target as the
+continuation at that point, I have a function call s450Error, which goes to
+target when invoked. Target in this case is right at prompting user for input
+before evaluating the user input. Now i can use s450Error to do all the error
+handling in s450 and prompting user for input again whenever an error occurs in
+s450 instead of exiting.
+
+for handling exit, I have another call/cc defined with its body being the rest
+of s450, which is evaluating the user input and calling s450 recursively. By
+having the recursive call of (s450) being inside the body of this call/cc, we
+are setting the continuation outside of (s450). That way when we call the
+continuation, (s450) does not get invoked. There is also a set! statement within
+this call/cc that sets this continuation to a global variable, which is used by
+(exit). (exit) is a special-form defined within s450 that when invoked, we call
+the continuation in order to exit s450. Now that we have a continuation set to
+outside of (s450), we can use that continuation when we prompt for user input
+and the user enters a <eof> object.
